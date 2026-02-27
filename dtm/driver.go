@@ -135,6 +135,7 @@ func (k *xtmDriver) RegisterService(target string, endpoint string) error {
 // 输出：server="discovery:///xshop-inventory-srv", method="/Inventory/Sell"
 func (k *xtmDriver) ParseServerMethod(uri string) (server string, method string, err error) {
 	// 保留Kratos原版：处理直连地址（如127.0.0.1:8081/Inventory/Sell）
+	fmt.Println("ParseServerMethod 调用  url: ", uri)
 	if !strings.Contains(uri, "//") {
 		sep := strings.IndexByte(uri, '/')
 		if sep == -1 {
@@ -163,6 +164,7 @@ func (k *xtmDriver) ParseServerMethod(uri string) (server string, method string,
 	// 步骤3：拼接Consul resolver兼容的server地址（两个斜杠，而非三个）
 	// Kratos原版拼出discovery:///xxx → 修复后拼出discovery://xxx（Consul能正确解析）
 	server = fmt.Sprintf("%s://%s", u.Scheme, pathParts[0])
+	fmt.Println("ParseServerMethod   server: ", server)
 	// 步骤4：拼接标准method（保留Kratos的格式）
 	method = "/" + pathParts[1]
 
