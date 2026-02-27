@@ -161,12 +161,10 @@ func (k *xtmDriver) ParseServerMethod(uri string) (server string, method string,
 		return "", "", fmt.Errorf("consul discovery url %s missing method (e.g. /Inventory/Sell)", uri)
 	}
 
-	// 步骤3：拼接Consul resolver兼容的server地址（两个斜杠，而非三个）
-	// Kratos原版拼出discovery:///xxx → 修复后拼出discovery://xxx（Consul能正确解析）
-	server = fmt.Sprintf("%s://%s", u.Scheme, pathParts[0])
-	fmt.Println("ParseServerMethod   server: ", server)
-	// 步骤4：拼接标准method（保留Kratos的格式）
-	method = "/" + pathParts[1]
+	server = fmt.Sprintf("%s:///%s", u.Scheme, pathParts[0])
 
+	// method 保持 /Inventory/Sell
+	method = "/" + pathParts[1]
 	return server, method, nil
+
 }
