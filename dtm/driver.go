@@ -11,8 +11,8 @@ import (
 	"github.com/nexttime1/xtm_dtm/gnova/registry/consul"
 	// Kratos的gRPC resolver（核心：解析discovery://协议）
 	consulAPI "github.com/hashicorp/consul/api" // Consul原生客户端
-	_ "github.com/nexttime1/xtm_dtm/gnova/server/rpcserver/resolver/direct"
-	"github.com/nexttime1/xtm_dtm/gnova/server/rpcserver/resolver/discovery"
+	_ "github.com/nexttime1/xtm_dtm/gnova/rpcserver/resolver/direct"
+	"github.com/nexttime1/xtm_dtm/gnova/rpcserver/resolver/discovery"
 	"google.golang.org/grpc/resolver" // gRPC地址解析器接口
 	"net/url"                         // URL解析工具
 	"strings"                         // 字符串处理

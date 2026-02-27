@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"time"
 
-	"Advanced_Shop/gnova/registry"
-	"Advanced_Shop/pkg/log"
+	"github.com/nexttime1/xtm_dtm/gnova/registry"
+	"github.com/nexttime1/xtm_dtm/log"
 	"google.golang.org/grpc/attributes"
 	"google.golang.org/grpc/resolver"
 )

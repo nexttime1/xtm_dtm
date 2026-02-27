@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"Advanced_Shop/gnova/registry"
+	"github.com/nexttime1/xtm_dtm/gnova/registry"
 	"google.golang.org/grpc/resolver"
 )
 
