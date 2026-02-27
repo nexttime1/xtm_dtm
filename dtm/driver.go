@@ -78,7 +78,7 @@ func (k *xtmDriver) RegisterService(target string, endpoint string) error {
 	switch u.Scheme {
 	// 处理discovery://或etcd://协议
 	case DefaultScheme: // discovery://
-		fallthrough // 穿透到EtcdScheme逻辑（因为discovery默认基于etcd）
+		fallthrough // 穿透到ConsulScheme
 
 	// 处理consul://协议
 	case ConsulScheme: // consul://
@@ -134,25 +134,37 @@ func (k *xtmDriver) RegisterService(target string, endpoint string) error {
 // 输入："discovery:///xshop-inventory-srv/Inventory/Sell"
 // 输出：server="discovery:///xshop-inventory-srv", method="/Inventory/Sell"
 func (k *xtmDriver) ParseServerMethod(uri string) (server string, method string, err error) {
-	// 情况1：URI不含"//"（比如"127.0.0.1:8081/Inventory/Sell"）
+	// 保留Kratos原版：处理直连地址（如127.0.0.1:8081/Inventory/Sell）
 	if !strings.Contains(uri, "//") {
-		sep := strings.IndexByte(uri, '/') // 找第一个"/"的位置
-		if sep == -1 {                     // 没有"/"，格式错误
+		sep := strings.IndexByte(uri, '/')
+		if sep == -1 {
 			return "", "", fmt.Errorf("bad url: '%s'. no '/' found", uri)
 		}
-		// 拆分：server=127.0.0.1:8081，method=/Inventory/Sell
 		return uri[:sep], uri[sep:], nil
 	}
 
-	// 情况2：URI含"//"（比如"discovery:///xshop-inventory-srv/Inventory/Sell"）
+	// 步骤1：修复Kratos bug1 - 解析失败返回具体错误（而非nil）
 	u, err := url.Parse(uri)
 	if err != nil {
-		return "", "", fmt.Errorf("parse uri %s failed: %v", uri, err)
+		return "", "", fmt.Errorf("parse consul discovery uri %s failed: %v", uri, err)
 	}
-	// 找Path中第一个"/"的位置（比如Path="/Inventory/Sell"，index=0）
-	index := strings.IndexByte(u.Path[1:], '/') + 1
-	// 拆分：
-	// server = scheme://host + Path[:index] → discovery:///xshop-inventory-srv
-	// method = Path[index:] → /Inventory/Sell
-	return u.Scheme + "://" + u.Host + u.Path[:index], u.Path[index:], nil
+
+	// 步骤2：修复Kratos bug2 - 正确拆分Path（适配Consul resolver格式）
+	// 核心：把Kratos的index计算逻辑替换为更鲁棒的拆分方式，避免多斜杠
+	cleanPath := strings.TrimPrefix(u.Path, "/") // 去掉Path开头的/
+	pathParts := strings.SplitN(cleanPath, "/", 2)
+	if len(pathParts) < 1 {
+		return "", "", fmt.Errorf("consul discovery url %s missing service name", uri)
+	}
+	if len(pathParts) < 2 {
+		return "", "", fmt.Errorf("consul discovery url %s missing method (e.g. /Inventory/Sell)", uri)
+	}
+
+	// 步骤3：拼接Consul resolver兼容的server地址（两个斜杠，而非三个）
+	// Kratos原版拼出discovery:///xxx → 修复后拼出discovery://xxx（Consul能正确解析）
+	server = fmt.Sprintf("%s://%s", u.Scheme, pathParts[0])
+	// 步骤4：拼接标准method（保留Kratos的格式）
+	method = "/" + pathParts[1]
+
+	return server, method, nil
 }
