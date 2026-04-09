@@ -3,16 +3,13 @@ package driver
 import (
 	"context"
 	"fmt"
-	"github.com/nexttime1/xtm_dtm/gnova/registry/etcd"
-	etcdAPI "go.etcd.io/etcd/client/v3"
-
-	// Kratos的consul/etcd注册中心适配包
-	"github.com/nexttime1/xtm_dtm/gnova/registry" // Kratos注册中心抽象接口
-	"github.com/nexttime1/xtm_dtm/gnova/registry/consul"
-	// Kratos的gRPC resolver（核心：解析discovery://协议）
 	consulAPI "github.com/hashicorp/consul/api" // Consul原生客户端
+	"github.com/nexttime1/xtm_dtm/gnova/registry"
+	"github.com/nexttime1/xtm_dtm/gnova/registry/consul"
+	"github.com/nexttime1/xtm_dtm/gnova/registry/etcd"
 	_ "github.com/nexttime1/xtm_dtm/gnova/rpcserver/resolver/direct"
 	"github.com/nexttime1/xtm_dtm/gnova/rpcserver/resolver/discovery"
+	etcdAPI "go.etcd.io/etcd/client/v3"
 	"google.golang.org/grpc/resolver" // gRPC地址解析器接口
 	"net/url"                         // URL解析工具
 	"strings"                         // 字符串处理
@@ -21,16 +18,15 @@ import (
 // 常量定义：驱动名和协议名
 const (
 	DriverName    = "dtm-driver-xtm" // 自定义驱动的名称（唯一标识）
-	DefaultScheme = "discovery"      // Kratos默认的服务发现协议
-	EtcdScheme    = "etcd"           // Etcd协议
-	ConsulScheme  = "consul"         // Consul协议
+	DefaultScheme = "discovery"      // 默认
+	EtcdScheme    = "etcd"
+	ConsulScheme  = "consul"
 )
 
 // kratosDriver：实现DTM Driver接口的结构体
-// 注：结构体本身无字段，因为核心逻辑依赖Kratos的注册中心，不需要存储状态
 type xtmDriver struct {
-	consulAddr   string // Consul地址（比如127.0.0.1:8500）
-	consulScheme string // Consul协议（http/https）
+	consulAddr   string // Consul地址
+	consulScheme string // Consul协议
 }
 
 func NewXtmDriver(consulAddr, consulScheme string) *xtmDriver {
@@ -40,15 +36,15 @@ func NewXtmDriver(consulAddr, consulScheme string) *xtmDriver {
 	}
 }
 
-// GetName 返回驱动名称（DTM驱动接口要求）
-// 作用：DTM通过这个方法识别驱动，对应dtmdriver.Register()的key
+// GetName 返回驱动名称
+// 对应dtmdriver.Register()的 key
 func (k *xtmDriver) GetName() string {
-	return DriverName // 返回常量"dtm-driver-kratos"
+	return DriverName // 返回 dtm-driver-xtm
 }
 
 // RegisterAddrResolver 注册地址解析器（DTM驱动接口要求）
 // 作用：让DTM能识别并解析自定义协议（比如discovery://）
-// 这个实现是空的，因为Kratos的resolver在RegisterService中注册了
+// 这个实现是空的
 func (k *xtmDriver) RegisterAddrResolver() {
 	// 空实现原因：Kratos的resolver在RegisterService中通过resolver.Register()注册，无需在这里重复注册
 }
@@ -63,7 +59,7 @@ func (k *xtmDriver) RegisterAddrResolver() {
 // - target：服务地址（比如"discovery:///xshop-inventory-srv"）；
 // - endpoint：服务端点（比如"grpc://127.0.0.1:8081"）。
 func (k *xtmDriver) RegisterService(target string, endpoint string) error {
-	// 1. 如果target为空，直接返回（无需注册）
+	// 1. 如果target为空，直接返回
 	if target == "" {
 		return nil
 	}
@@ -84,19 +80,18 @@ func (k *xtmDriver) RegisterService(target string, endpoint string) error {
 	case ConsulScheme: // consul://
 		// 1. 创建Consul客户端（和你的NewRegistrar逻辑完全一致）
 		c := consulAPI.DefaultConfig()
-		c.Address = k.consulAddr  // 用你的Consul地址
-		c.Scheme = k.consulScheme // 用你的Consul协议
+		c.Address = k.consulAddr  // 我们环境变量的
+		c.Scheme = k.consulScheme // 我们环境变量的
 		cli, err := consulAPI.NewClient(c)
 		if err != nil {
 			return err
 		}
 
-		// 封装成Kratos的Consul注册器（开启健康检查，和你一致）
+		// 封装成我们的Consul注册器
 		consulRegistry := consul.New(cli, consul.WithHealthCheck(true))
 
-		//注册我们的discovery resolver
-		// 作用：让gRPC（DTM底层用gRPC）能识别discovery://协议
-		// 这一步后，DTM就能从Consul中拉取你已注册的服务地址
+		// 注册我们的discovery resolver 即使项目有注册，跟这个没关系，相当于不同进程了
+		// 内部逻辑其实是走grpc 然后走 grpc 的服务发现 由于这里注册了自定义的，所以执行这里的逻辑，然后拿到服务实例，再给k8s内部节点通信
 		resolver.Register(discovery.NewBuilder(consulRegistry, discovery.WithInsecure(true)))
 
 		// 服务已经注册到Consul了，不需要DTM再注册
@@ -104,26 +99,25 @@ func (k *xtmDriver) RegisterService(target string, endpoint string) error {
 		return nil
 
 	case EtcdScheme: // etcd://
-		// 3.1 构建Kratos的服务实例对象
+		// 构建服务实例对象
 		registerInstance := &registry.ServiceInstance{
 			Name:      strings.TrimPrefix(u.Path, "/"), // 服务名（比如xshop-inventory-srv）
 			Endpoints: strings.Split(endpoint, ","),    // 服务端点（拆分多个地址）
 		}
-		// 3.2 创建Etcd原生客户端（地址从URL.Host获取，比如"127.0.0.1:2379"）
+
 		client, err := etcdAPI.New(etcdAPI.Config{
-			Endpoints: strings.Split(u.Host, ","), // 支持多个etcd节点（逗号分隔）
+			Endpoints: strings.Split(u.Host, ","),
 		})
 		if err != nil {
 			return err // Etcd客户端创建失败
 		}
-		// 3.3 创建Kratos的Etcd注册中心
+
 		registry := etcd.New(client)
-		// 3.4 核心：注册Kratos的discovery resolver到gRPC
-		// 作用：让gRPC（DTM底层用gRPC调用）能解析discovery://协议
+
 		resolver.Register(discovery.NewBuilder(registry, discovery.WithInsecure(true)))
-		// 3.5 （可选）把服务实例注册到Etcd（如果需要DTM自身注册服务）
+
 		return registry.Register(context.Background(), registerInstance)
-	// 未知协议：返回错误
+
 	default:
 		return fmt.Errorf("unknown scheme: %s", u.Scheme)
 	}
@@ -144,15 +138,13 @@ func (k *xtmDriver) ParseServerMethod(uri string) (server string, method string,
 		return uri[:sep], uri[sep:], nil
 	}
 
-	// 步骤1：修复Kratos bug1 - 解析失败返回具体错误（而非nil）
+	//  解析失败返回具体错误（而非nil）
 	u, err := url.Parse(uri)
 	if err != nil {
 		return "", "", fmt.Errorf("parse consul discovery uri %s failed: %v", uri, err)
 	}
 
-	// 步骤2：修复Kratos bug2 - 正确拆分Path（适配Consul resolver格式）
-	// 核心：把Kratos的index计算逻辑替换为更鲁棒的拆分方式，避免多斜杠
-	cleanPath := strings.TrimPrefix(u.Path, "/") // 去掉Path开头的/
+	cleanPath := strings.TrimPrefix(u.Path, "/")
 	pathParts := strings.SplitN(cleanPath, "/", 2)
 	if len(pathParts) < 1 {
 		return "", "", fmt.Errorf("consul discovery url %s missing service name", uri)

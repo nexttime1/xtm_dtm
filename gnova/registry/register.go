@@ -19,10 +19,6 @@ type Discovery interface {
 }
 
 type Watcher interface {
-	//获取服务实例, next在下面的情况下会返回服务
-	//1. 第一次监听时，如果服务实例列表不为空，则返回服务实例列表
-	//2. 如果服务实例发生变化，则返回服务实例列表
-	//3. 如果上面两种情况都不满足，则会阻塞到context deadline或者cancel
 	Next() ([]*ServiceInstance, error)
 	//主动放弃监听
 	Stop() error
